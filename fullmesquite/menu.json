@@ -1,0 +1,12 @@
+{
+	"name": "Mesquite Browser",
+	"priority": -997,
+	"items": [
+	{
+		"name": "Run Mesquite Fullscreen",
+		"priority": 1, 
+		"action": "bin/run.sh",
+		"exitmenu": false
+	}
+	]
+}
