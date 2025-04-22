@@ -64,23 +64,10 @@ stop_gui
 lipc-set-prop com.lab126.appmgrd start app://com.lab126.browser
 
 browser_pid=$!
-
-# Watching for a keypress on the power button and exits loop when catched (thanks keiwop!)
-while true; do
-    key_event=$(dd if=/dev/input/event1 bs=16 count=1 2> /dev/null | hexdump -v -e '16/1 "%02X"')
-    echo "EVENT: $key_event"
-    key_value=$(echo $key_event | cut -c26)
-    echo "VALUE: $key_value"
-    if [ $key_value -eq 1 ]; then
-        eips 1 1 "Power button pressed"
-        break
-    fi
-    usleep 333333 # Check keypress 3 times per second. Reactive but probably draining battery a bit.
-done
-
-kill -9 $browser_pid
-killall kindle_browser
+# Watching for a keypress on the power button and exits
 unset LD_LIBRARY_PATH
+lipc-wait-event com.lab126.powerd PowerButtonQuickPress
+kill -9 $browser_pid
 
 start_gui
 
