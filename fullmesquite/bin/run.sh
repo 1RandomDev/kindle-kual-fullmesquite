@@ -1,17 +1,10 @@
 #!/bin/sh
 # Name: FullMesquite
-# Author: slyhype
+# Author: slyhype & 1RandomDev
 # DontUseFBInk
 
-## CONFIG HERE
-GO_FULLSCREEN=false # Set to false if you want keyboard access (note, kindle UI is still running and takes up at least 1/4th or more of the screen.)
-FULLSCREEN_SITE="https://example.com" # Set to the URL you want to open in fullscreen mode
-EXTRACHROMEARGS="" # Extra stuff, mainly for debugging
-## END CONFIG
+HANDLER_ID="com.lab126.browser" # Default system browser
 
-### DO NOT MODIFY PAST THIS POINT UNLESS YOU KNOW WHAT YOU'RE DOING ###
-
-## Thanks KOReader! I'll be borrowing this :)
 if [ -d /etc/upstart ]; then
     export INIT_TYPE="upstart"
     if [ -f /etc/upstart/functions ]; then
@@ -23,66 +16,73 @@ else
         . /etc/rc.d/functions
     fi
 fi
+
 refresh_screen(){
     eips -c &> /dev/null
     eips -c &> /dev/null
 }
 
-stop_gui(){
-    if [ "$GO_FULLSCREEN" = true ]; then
-        echo "Stopping gui"
-        ## Check if using framework or labgui, then stop ui
-        if [ "${INIT_TYPE}" = "sysv" ]; then
-            /etc/init.d/framework stop
-        else
-            trap "" TERM
-            stop lab126_gui
-            usleep 1250000
-            trap - TERM
-        fi
-        refresh_screen
-    fi
+set_screen_brightness(){
+    echo $1 > /sys/devices/platform/imx-i2c.0/i2c-0/0-003c/max77696-bl.0/backlight/max77696-bl/brightness
 }
 
-start_gui(){
-    if [ "$GO_FULLSCREEN" = true ]; then
-        echo "Starting gui"
-        ## Check if using framework or labgui, then start ui
-        if [ "${INIT_TYPE}" = "sysv" ]; then
-            cd / && /etc/init.d/framework start
-        else
-            cd / && start lab126_gui
-            usleep 1250000
-        fi
-        refresh_screen
-        eips 1 1 "Please wait while UI is reset"
-    fi
+prevent_screensaver(){
+    lipc-set-prop com.lab126.powerd preventScreenSaver $1
 }
 
-stop_gui
+stop_system_gui(){
+    echo "Stopping gui"
 
-lipc-set-prop com.lab126.appmgrd start app://com.lab126.browser
+    ## Check if using framework or labgui, then stop ui
+    if [ "${INIT_TYPE}" = "sysv" ]; then
+        /etc/init.d/framework stop
+    else
+        trap "" TERM
+        stop lab126_gui
+        usleep 1250000
+        trap - TERM
+    fi
+    
+    refresh_screen
+}
 
-browser_pid=$!
+start_system_gui(){
+    echo "Starting gui"
+    ## Check if using framework or labgui, then start ui
+    if [ "${INIT_TYPE}" = "sysv" ]; then
+        cd / && /etc/init.d/framework start
+    else
+        cd / && start lab126_gui
+        usleep 1250000
+    fi
+    eips 1 1 "Please wait while Kindle UI is starting"
 
-# Watching for a keypress on the power button and exits loop when catched (thanks keiwop!)
-# while true; do
-#     key_event=$(dd if=/dev/input/event1 bs=16 count=1 2> /dev/null | hexdump -v -e '16/1 "%02X"')
-#     echo "EVENT: $key_event"
-#     key_value=$(echo $key_event | cut -c26)
-#     echo "VALUE: $key_value"
-#     if [ $key_value -eq 1 ]; then
-#         eips 1 1 "Power button pressed"
-#         break
-#     fi
-#     usleep 333333 # Check keypress 3 times per second. Reactive but probably draining battery a bit.
-# done
+    lipc-set-prop com.lab126.powerd preventScreenSaver 0
+}
 
-# Watching for a keypress on the power button and exits
-unset LD_LIBRARY_PATH
-lipc-wait-event com.lab126.powerd PowerButtonQuickPress
-kill -9 $browser_pid
+# Stop Kindle UI to save ressources and remove all menu bars
+stop_system_gui
+# Disable screensaver/standby mode
+prevent_screensaver 1
+# Disable backlight
+set_screen_brightness 0
 
-start_gui
+# Start actual app
+lipc-set-prop com.lab126.appmgrd start "app://$HANDLER_ID"
 
-exit
+# Wait for power button press
+script -f /dev/null -c "evtest /dev/input/event0" | while read line; do
+    case "$line" in
+        *"code 116 (Power), value 1"*)
+            # Kill app before restoring system UI to prevent it from freezing in fullscreen mode
+            echo "Power button pressed";
+            browserPid=$(gdbus call -y -d org.freedesktop.DBus -o / -m org.freedesktop.DBus.GetConnectionUnixProcessID "$HANDLER_ID" | sed -E 's/.* ([0-9]+),.*/\1/')
+            echo "Killing PID $browserPid"
+            kill $browserPid
+
+            start_system_gui
+            prevent_screensaver 0
+            exit
+            ;;
+    esac
+done
