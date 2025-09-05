@@ -56,8 +56,6 @@ start_system_gui(){
         usleep 1250000
     fi
     eips 1 1 "Please wait while Kindle UI is starting"
-
-    lipc-set-prop com.lab126.powerd preventScreenSaver 0
 }
 
 # Stop Kindle UI to save ressources and remove all menu bars
